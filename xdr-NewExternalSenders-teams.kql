@@ -1,0 +1,25 @@
+let LookbackPeriod = 7d; //define the period to check for known external senders
+let RecentPeriod = 1d; //define the period to check for new external senders
+let internalDomains = IdentityInfo
+| distinct Domain = tostring(split(AccountUpn, "@")[1]); //define internal user domains
+let ExternalRecipientsLastWeek = 
+MessageEvents
+| where Timestamp between (ago(LookbackPeriod + RecentPeriod) .. ago(RecentPeriod))
+| mv-expand RecipientDetails
+| extend Recipient = parse_json(RecipientDetails)
+| extend RecipientSmtpAddress = tostring(Recipient.RecipientSmtpAddress)
+| where not(SenderEmailAddress has_any (internalDomains)) //only return check messages where the sender of the message is external
+| summarize by RecipientSmtpAddress;
+let ExternalRecipientsToday = 
+MessageEvents
+| where Timestamp >= ago(RecentPeriod)
+| mv-expand RecipientDetails
+| extend Recipient = parse_json(RecipientDetails)
+| extend RecipientSmtpAddress = tostring(Recipient.RecipientSmtpAddress)
+| where not(RecipientSmtpAddress has_any (internalDomains))
+| where SenderEmailAddress has_any (internalDomains)
+| where ThreadType == "chat" //only check chat messages, remove this line to check all teams events
+| project Timestamp, Subject, ThreadName, SenderEmailAddress, RecipientSmtpAddress;
+ExternalRecipientsToday
+| join kind=anti (ExternalRecipientsLastWeek) on RecipientSmtpAddress
+| project Timestamp, Subject, ThreadName, SenderEmailAddress, NewExternalRecipient = RecipientSmtpAddress;
