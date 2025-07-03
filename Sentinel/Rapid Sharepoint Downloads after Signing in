@@ -1,0 +1,40 @@
+let TimeRange = 1d; // Define time range
+let TimeWindow = 10s;
+let MinDownloads = 3; // Minimum downloads to trigger alert
+let MaxTimeWindow = 10m; // Maximum time between first and last download
+let SuspiciousSignIns = SigninLogs
+| where TimeGenerated >= ago(TimeRange)
+| where ResultType == "0" // Successful sign-ins
+| where isnotempty(UserPrincipalName) and isnotempty(IPAddress) // complete data only
+| where isempty(DeviceDetail.displayName) // where the sign in isnt coming from a registered device
+| project SignInTime = TimeGenerated, UserId = UserPrincipalName, UserPrincipalName, IPAddress, RiskLevel = RiskLevelDuringSignIn, Location;
+// Get file download operations with suspicious patterns
+let SuspiciousFileDownloads = OfficeActivity
+| where TimeGenerated >= ago(TimeRange)
+| where RecordType == "SharePointFileOperation" 
+| where Operation == "FileDownloaded" //can be expanded to include more sharepoint activity
+| where isnotempty(UserId) and isnotempty(SourceFileName) //complete data only
+// Filter out common system/temp files
+| where not(SourceFileName matches regex @"(?i)\.(tmp|temp|cache|log|~)$")
+| where not(SourceFileName startswith "~")
+// uncomment this to only match specific filetypes
+// | where SourceFileName matches regex @"(?i)\.(doc|docx|pdf|xls|xlsx|ppt|pptx|zip|rar|csv|txt)$"
+| project DownloadTime = TimeGenerated, UserId, FileName = SourceFileName, IPAddress1 = ClientIP, UserAgent;
+//time for correlation!
+let CorrelatedEvents = SuspiciousSignIns
+| join kind=inner (
+    SuspiciousFileDownloads
+    | where isnotempty(UserId)
+) on UserId
+| where DownloadTime between (SignInTime .. (SignInTime + TimeWindow))
+| where IPAddress == IPAddress1 // Same IP for sign-in and download
+| project SignInTime, UserPrincipalName, IPAddress, RiskLevel, Location, DownloadTime, FileName, UserAgent;
+//identify bulk download patterns
+CorrelatedEvents
+| summarize FirstDownload = min(DownloadTime), LastDownload = max(DownloadTime), DownloadCount = count(), UniqueFiles = dcount(FileName), FileNames = make_list(FileName, 20), UserAgents = make_set(UserAgent) by SignInTime, UserPrincipalName, IPAddress, RiskLevel, tostring(Location)
+| extend DownloadDuration = LastDownload - FirstDownload
+// Filter for bulk download patterns
+| where DownloadCount >= MinDownloads and DownloadDuration <= MaxTimeWindow and UniqueFiles >= 2
+| where DownloadCount >= 5 or (DownloadCount >= 3 and DownloadDuration <= 1m) // Many or Fast downloads
+| project SignInTime, UserPrincipalName, IPAddress, Location, RiskLevel, DownloadCount, UniqueFiles, DownloadDuration, FirstDownload, LastDownload, SampleFiles = strcat_array(array_slice(FileNames, 0, 5), "; "), UserAgents
+| order by DownloadCount desc, SignInTime desc
