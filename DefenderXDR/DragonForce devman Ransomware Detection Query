@@ -1,0 +1,26 @@
+// DevMan Ransomware NRT Detection Query
+// NRT detection of DragonForce ransomware .devman variant. Combines suspicious indicators from the same process.
+// Based on IOCs from https://any.run/cybersecurity-blog/devman-ransomware-analysis/
+
+let lookbackWindow = 5m; // Define the lookback window for NRT detection
+let fileActivity = DeviceFileEvents
+| where TimeGenerated > ago(lookbackWindow)
+// Derive file extension from FileName to ensure it's always available
+| extend _FileExtension = tolower(tostring(split(FileName, '.')[-1]))
+| where InitiatingProcessFileName has_any ("hsfjuukjzloqu28oajh727190", "e47qfsnz2trbkhnt.devman") or FileName has_any ("hsfjuukjzloqu28oajh727190", "e47qfsnz2trbkhnt.devman") or _FileExtension == "devman"
+| project Timestamp, DeviceId, DeviceName, InitiatingProcessId, InitiatingProcessCommandLine, FileName, FolderPath, _FileExtension, ActionType, SHA256, ReportId, FileActivityDetection = "File IOC";
+let registryActivity = DeviceRegistryEvents
+| where TimeGenerated > ago(lookbackWindow)
+| where RegistryKey has "HKEY_CURRENT_USER\\Software\\Microsoft\\RestartManager\\Session0000"
+| project Timestamp, DeviceId, DeviceName, InitiatingProcessId, InitiatingProcessCommandLine, RegistryKey, RegistryValueData, ActionType, ReportId, RegistryActivityDetection = "Registry IOC";
+let processActivity = DeviceProcessEvents
+| where TimeGenerated > ago(lookbackWindow)
+| where ProcessCommandLine has_any ("Local\\RstrMgr", "Local\\RstrMgr-") or ProcessVersionInfoOriginalFileName has_any ("Local\\RstrMgr", "Local\\RstrMgr-") or ProcessVersionInfoProductName has_any ("Local\\RstrMgr", "Local\\RstrMgr-")
+| project Timestamp, DeviceId, DeviceName, ProcessId, ProcessCommandLine, FileName, ReportId, ProcessActivityDetection = "Process Mutex Pattern";
+fileActivity
+| join kind=inner (registryActivity | union processActivity) on DeviceId, $left.InitiatingProcessId == $right.InitiatingProcessId
+| where abs(datetime_diff('second', Timestamp, Timestamp1)) < 60
+| project Timestamp = coalesce(Timestamp, Timestamp1), DeviceId, DeviceName, InitiatingProcessId = coalesce(InitiatingProcessId, InitiatingProcessId1), InitiatingProcessCommandLine = coalesce(InitiatingProcessCommandLine, InitiatingProcessCommandLine1), FileName, FolderPath, _FileExtension, RegistryKey, RegistryValueData, ProcessMutexPattern = ProcessActivityDetection, FileIOCDetected = FileActivityDetection, RegistryIOCDetected = RegistryActivityDetection, ActionType, SHA256, ReportId = coalesce(ReportId, ReportId1)
+| extend DetectionDetails = strcat(iif(isnotempty(FileIOCDetected), "File IOC: ", ""), iif(isnotempty(FileIOCDetected), strcat(FileName, " (", _FileExtension, ")"), ""), iif(isnotempty(RegistryIOCDetected), ", Registry IOC: ", ""), iif(isnotempty(RegistryIOCDetected), RegistryKey, ""), iif(isnotempty(ProcessMutexPattern), ", Mutex Pattern: ", ""), iif(isnotempty(ProcessMutexPattern), ProcessMutexPattern, ""))
+| project-reorder Timestamp, DeviceName, InitiatingProcessCommandLine, DetectionDetails
+| order by Timestamp desc
