@@ -1,0 +1,21 @@
+let businessHoursStart = 7*60;  // edit the leading number as your business start time. This is limited to hour, in 24 hour format i.e. the HH in HH:MM:SS
+let businessHoursEnd = 18*60;   // edit the leading number as your business end time. This is limited to hour, in 24 hour format i.e. the HH in HH:MM:SS
+AuditLogs
+| where OperationName has_any ("Add member to role completed", "Add app role assignment grant to user") //remove "remove" when implemented, this is just to actually get results to demonstrate
+| extend TargetRole = tostring(TargetResources[0].displayName)
+| where isnotempty(TargetRole)
+| where TargetRole contains "admin" or TargetRole contains "Manage"
+| extend LocalTime = datetime_add('hour', 12, TimeGenerated)    // Convert to your timezone, replace the 12 with whatever your UTC+ timezone is
+| extend DayOfWeek = toint(dayofweek(LocalTime) / 1d)           //get day of week as a dayofweek number
+| extend HourOfDay = hourofday(LocalTime)                       //get hour of day as a number
+| extend MinuteOfHour = datetime_part("minute", LocalTime)      // get minute of the hour
+| extend TimeInMinutes = (HourOfDay * 60) + MinuteOfHour        //get total time in minutes (hours + minutes)
+| where DayOfWeek < 1 or DayOfWeek > 5 or TimeInMinutes < businessHoursStart or TimeInMinutes >= businessHoursEnd //Logic for out of business hours
+| extend InitiatedBy = tostring(InitiatedBy.user.userPrincipalName)
+| mv-expand TargetResources
+| where TargetResources.type == "User"
+| extend TargetUserPrincipalName = tostring(TargetResources.userPrincipalName)
+| extend TargetUserDisplayName = tostring(TargetResources.displayName)
+| extend LocalTime = format_datetime(LocalTime, "yyyy-MM-dd HH:mm:ss")
+| project TimeGenerated, LocalTime, OperationName, Result, InitiatedBy, TargetUserPrincipalName, TargetUserDisplayName, TargetRole, CorrelationId
+| sort by TimeGenerated desc
