@@ -1,0 +1,30 @@
+let SSDomains = dynamic(["-servicedesk.", "-okta.", "-sso.", "-cms.", "-helpdesk.", "oktalogin-"]); // domains from https://www.cisa.gov/sites/default/files/2025-07/aa23-320a-scattered-spider_1.pdf
+DeviceNetworkEvents
+| where RemoteUrl has_any (SSDomains)
+| where ActionType == "ConnectionSuccess"
+| project Timestamp, DeviceName, AccountUPN = InitiatingProcessAccountUpn, Url = RemoteUrl, ReportId
+| extend Source = "Network"
+| union (
+EmailUrlInfo
+| where Url has_any (SSDomains)
+| join EmailEvents on NetworkMessageId
+| where DeliveryAction != "Blocked"
+| project Timestamp, AccountUPN = RecipientEmailAddress, Url, ActionType = DeliveryAction, Source = "Email", EmailSubject = Subject, Sender = SenderFromAddress
+)
+| union (
+UrlClickEvents
+| where Url has_any (SSDomains)
+| where ActionType == "ClickAllowed"
+| project Timestamp, AccountUPN = AccountUpn, Url, ActionType, Source = "SafeLinks"
+)
+| union (
+MessageEvents
+| join kind=inner (
+    MessageUrlInfo
+    | where UrlDomain has_any (SSDomains)
+) on TeamsMessageId
+| extend ParsedRecipients = parse_json(RecipientDetails)
+| mv-expand Recipient = ParsedRecipients
+| extend AccountUPN = tostring(Recipient.RecipientSmtpAddress)
+| project Timestamp, AccountUPN, Sender = SenderEmailAddress, TeamsThreadName = ThreadName, Url, Source = "Teams"
+)
