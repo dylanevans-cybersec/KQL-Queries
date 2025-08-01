@@ -1,0 +1,8 @@
+DeviceProcessEvents
+| where FileName =~ "ping.exe"
+| where ProcessCommandLine has_any("-l", "/l")
+| extend payload_size = extract(@"[-/][lL]\s+(\d+)", 1, ProcessCommandLine)
+| extend RemoteIP = extract(@"\b\d{1,3}(?:\.\d{1,3}){3}\b", 0, ProcessCommandLine)
+| extend RemoteURL = extract(@"(?:https?:\/\/)?(?:[^@\s]+@)?(?:www\.)?([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})", 1, ProcessCommandLine)
+| where isnotempty(payload_size) and toint(payload_size) > 1024
+| project Timestamp, DeviceName, AccountName, RemoteIP, RemoteURL, payload_size, ProcessCommandLine
