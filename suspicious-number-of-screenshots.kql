@@ -1,0 +1,20 @@
+// High Volume Screenshot Activity Detection
+// Detects processes making an unusually high number of screenshots in the set timeframe
+// Created by Dylan Evans (detections.ai/user/decksy)
+let TimeWindow = 24h; // Adjust lookback time 
+let ScreenshotThreshold = 7; // Adjust based on environment
+DeviceEvents
+| where Timestamp >= ago(TimeWindow)
+| where ActionType in ("ScreenshotTaken", "FileCreated")
+// Look for screenshot-related API calls and file creations
+| where (ActionType == "ScreenshotTaken") or (ActionType == "FileCreated" and (FileName endswith ".png" or FileName endswith ".jpg" or FileName endswith ".jpeg" or FileName endswith ".bmp" or FileName endswith ".gif" or FileName endswith ".tiff")) or (ProcessCommandLine contains "BitBlt" or ProcessCommandLine contains "GetDC" or ProcessCommandLine contains "CreateCompatibleDC" or ProcessCommandLine contains "GetWindowDC" or ProcessCommandLine contains "PrintWindow" or ProcessCommandLine contains "ScreenCapture" or ProcessCommandLine contains "CopyFromScreen" or ProcessCommandLine contains "Graphics.CopyFromScreen")
+| extend Processes = tolower(tostring(split(InitiatingProcessFileName, "\\")[-1]))
+// Aggregate by screenshots per device
+| summarize TotalScreenshots = count(), Processes = make_set(Processes), NoOfUniqueProcesses = dcount(Processes), CommandLines = make_set(InitiatingProcessCommandLine, 10), FirstActivity = min(Timestamp), LastActivity = max(Timestamp) by DeviceId, DeviceName
+// Apply threshold based on total screenshots per device
+| where TotalScreenshots >= ScreenshotThreshold
+// Calculate activity duration
+| extend ScreenshotsPerHour = todouble(TotalScreenshots) / todouble(datetime_diff('hour', LastActivity, FirstActivity) + 1)
+// Output focused on device-level screenshot analysis
+| project DeviceName, DeviceId, TotalScreenshots, ScreenshotsPerHour, NoOfUniqueProcesses, Processes, CommandLines, FirstActivity, LastActivity
+| order by TotalScreenshots desc
