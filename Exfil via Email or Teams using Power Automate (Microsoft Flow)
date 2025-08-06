@@ -9,6 +9,5 @@ CloudAppEvents
 | where isnotempty(RawEventData.FlowConnectorNames)  // Must have connector info
 | extend FlowConnectorNames = RawEventData.FlowConnectorNames
 | extend AccountUPN = RawEventData.UserId
-| where tostring(FlowConnectorNames) has_any(  // Potential exfil via email/teams. Taken from the current connector page from MS Learn
-    "Outlook","Gmail","SMTP", "SendGrid","SparkPost","Mail","MailChimp","Mandrill", "Teams")
+| where tostring(FlowConnectorNames) has_any("Outlook","Gmail","SMTP", "SendGrid","SparkPost","Mail","MailChimp","Mandrill", "Teams") // Potential exfil via email/teams. Taken from the current connector page from MS Learn
 | project Timestamp, AccountUPN, AccountDisplayName, ActivityObjects, ObjectName, FlowConnectorNames
