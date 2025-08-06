@@ -1,0 +1,16 @@
+//Title: Exfil via Email/Teams using Power Automate (Microsoft Flow)
+/*
+Description: This rule detects the creation of new Microsoft Power Automate flows that are configured to use connectors capable of exfiltrating data via email or collaboration platforms like Microsoft Teams. It specifically looks for flows created with connectors which could indicate an attempt to send sensitive information outside the organization.
+/*
+// Author: Dylan Evans (detections.ai/user/Decksy), https://github.com/dylanevans-cybersec/KQL-Queries
+
+CloudAppEvents
+| where Timestamp > ago(7d)  // Change to suit your environment/risk appetite
+| where Application in ("Microsoft Power Automate", "Microsoft Flow")
+| where ActionType == "CreateFlow"  // Only new flow creations, use: has_any("CreateFlow", "EditFlow") // to see previously created flows that have been edited 
+| where isnotempty(RawEventData.FlowConnectorNames)  // Must have connector info
+| extend FlowConnectorNames = RawEventData.FlowConnectorNames
+| extend AccountUPN = RawEventData.UserId
+| where tostring(FlowConnectorNames) has_any(  // Potential exfil via email/teams. Taken from the current connector page from MS Learn
+    "Outlook","Gmail","SMTP", "SendGrid","SparkPost","Mail","MailChimp","Mandrill", "Teams")
+| project Timestamp, AccountUPN, AccountDisplayName, ActivityObjects, ObjectName, FlowConnectorNames
