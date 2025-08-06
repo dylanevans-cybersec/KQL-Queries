@@ -1,0 +1,9 @@
+// detects common TTPs of the Tangerine Turkey cryptomining worm
+// looks for 2 out of 5 methods to increase time to respond and scope of the alert
+// author: Dylan Evans (detections.ai/user/decksy)
+DeviceProcessEvents
+| where Timestamp > ago(7d)
+| where (ProcessCommandLine matches regex @"[xX]\d{6}\.vbs" and ProcessCommandLine has "wscript") or (InitiatingProcessFileName =~ "wscript.exe" and ProcessCommandLine matches regex @"[xX]\d{6}\.bat")
+| union (DeviceFileEvents | where Timestamp > ago(7d) | where FolderPath =~ @"C:\Windows \System32\" | where FileName in ("printui.exe", "printui.dll")) //space after windows is intentional, this is a common method used by this threat actor
+| summarize FirstSeen = min(Timestamp), LastSeen = max(Timestamp), ActionType = make_set(ActionType), CommandLine = make_set(ProcessCommandLine), FileNames = make_set(FileName) by DeviceId, DeviceName
+| where array_length(ActionType) >= 2
