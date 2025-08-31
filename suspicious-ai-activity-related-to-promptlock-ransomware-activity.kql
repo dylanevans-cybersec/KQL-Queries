@@ -4,7 +4,6 @@
 // References: https://x.com/ESETresearch/status/1960365364300087724
 let timeframe = 24h;
 let ollama_port = 11434;
-let go_ua_regex = @"^Go-http-client/";
 let common_tools = dynamic(["go.exe", "curl.exe", "wget.exe", "python.exe", "python3.exe", "powershell.exe", "pwsh.exe"]);
 let suspicious_events = union isfuzzy=true
 (DeviceNetworkEvents
@@ -17,7 +16,7 @@ let suspicious_events = union isfuzzy=true
 | where Timestamp >= ago(timeframe)
 | where RemoteUrl contains "ollama"
 | extend UserAgent = tostring(parse_json(AdditionalFields).UserAgent)
-| where UserAgent matches regex go_ua_regex
+| where UserAgent contains "go-http-client"
 | project Timestamp, DeviceId, DeviceName, AccountName = InitiatingProcessAccountName, ProcessName = InitiatingProcessFileName, ProcessCommandLine = InitiatingProcessCommandLine, RemoteIP, RemotePort, RemoteUrl, UserAgent, ActivityType = "GoClientToOllamaUrl"
 ),
 (DeviceProcessEvents
