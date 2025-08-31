@@ -1,0 +1,39 @@
+//Title: Unusual User Activity from an Unusual Location
+// Description: This rule identifies unusual activity from locations not previously observed for a user within a defined lookback period. It leverages Microsoft Entra ID (Azure AD) Behavior Analytics and SigninLogs to baseline legitimate user locations and filter out trusted devices/IPs. The rule flags unusual activity where the source IP location is new for the user and exceeds a configurable threshold of 'unusual' behavior indicators, while also excluding specified trusted countries.
+// Author: Dylan Evans (detections.ai/user/Decksy), https://github.com/dylanevans-cybersec/KQL-Queries
+
+let baselineUnusualEvents = 10; //adjust this, lower = more sensitive/more results
+let lookbackTime = ago(14d); //lookback time, generally the longer this is, the more records are checked against legit sources so results in less hits.
+let RecentUserLocations = BehaviorAnalytics
+| where TimeGenerated >= lookbackTime
+| extend Country = case(
+    SourceIPLocation matches regex @".*,\s*(.+)$", extract(@".*,\s*(.+)$", 1, SourceIPLocation),
+    SourceIPLocation matches regex @"^[^,]+$", SourceIPLocation,
+    "Unknown"
+)
+| summarize RecentCountries = make_set(Country) by UserPrincipalName;
+let LegitimateSignIns = SigninLogs // identify legitimate IPs based on user sign in activity
+| where TimeGenerated >= lookbackTime
+| where (isnotempty(DeviceDetail.deviceId) or isnotempty(MfaDetail.authMethod) or DeviceDetail.trustType has_any ("Azure AD Joined", "Azure AD Registered")) // Trusted devices and IPs
+| where ResultType == 0
+| summarize by UserPrincipalName, IPAddress;
+BehaviorAnalytics
+| extend ParsedInsights = parse_json(ActivityInsights)
+| mv-expand bagexpansion=array Property = bag_keys(ParsedInsights) to typeof(string)
+| extend Value = tostring(ParsedInsights[Property])
+| where Value == "True"
+| summarize TrueFieldsList = strcat_array(make_list(Property), ", "), TrueFieldCount = count(), 
+    FirstSeen = min(TimeGenerated), LastSeen = max(TimeGenerated), OccurrenceCount = dcount(TimeGenerated) 
+    by UserPrincipalName, IPAddress = SourceIPAddress, Location = SourceIPLocation
+| where TrueFieldCount >= baselineUnusualEvents
+| extend Country = case(
+    Location matches regex @".*,\s*(.+)$", extract(@".*,\s*(.+)$", 1, Location),
+    Location matches regex @"^[^,]+$", Location,
+    "Unknown"
+)
+| where not(Country has_any ("country1", "country2")) // Adjust trusted countries here
+| join kind=leftouter RecentUserLocations on UserPrincipalName
+| extend CountrySeen7Days = iff(set_has_element(RecentCountries, Country), "Yes", "No")
+| where CountrySeen7Days == "No"
+| join kind=leftanti LegitimateSignIns on UserPrincipalName, IPAddress
+| project FirstSeen, LastSeen, UserPrincipalName, IPAddress, unusualActivityCount = TrueFieldCount, unusualActivityList = TrueFieldsList, Country, CountrySeen7Days
