@@ -35,7 +35,6 @@ CorrelatedEvents
 | summarize FirstDownload = min(DownloadTime), LastDownload = max(DownloadTime), DownloadCount = count(), UniqueFiles = dcount(FileName), FileNames = make_list(FileName, 20), UserAgents = make_set(UserAgent) by SignInTime, UserPrincipalName, IPAddress, RiskLevel, tostring(Location)
 | extend DownloadDuration = LastDownload - FirstDownload
 // Filter for bulk download patterns
-| where DownloadCount >= MinDownloads and DownloadDuration <= MaxTimeWindow and UniqueFiles >= 2
-| where DownloadCount >= 5 or (DownloadCount >= 3 and DownloadDuration <= 1m) // Many or Fast downloads
+| where (DownloadCount >= MinDownloads and DownloadDuration <= MaxTimeWindow and UniqueFiles >= 2) or (DownloadCount >= 5 or (DownloadCount >= 3 and DownloadDuration <= 1m)) // Bulk downloads OR many/fast downloads
 | project SignInTime, UserPrincipalName, IPAddress, Location, RiskLevel, DownloadCount, UniqueFiles, DownloadDuration, FirstDownload, LastDownload, SampleFiles = strcat_array(array_slice(FileNames, 0, 5), "; "), UserAgents
 | order by DownloadCount desc, SignInTime desc
