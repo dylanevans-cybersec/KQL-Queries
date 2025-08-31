@@ -1,0 +1,30 @@
+// Title: Suspicious AI activity related to PromptLock Ransomware Activity
+// Description: Detects activity related to the PromptLock ransomware, which leverages the Ollama AI API and is written in Go. This rule looks for network connections to the Ollama service and related process executions.
+// Author: Dylan Evans (detections.ai/user/Decksy), https://github.com/dylanevans-cybersec/KQL-Queries
+// References: https://x.com/ESETresearch/status/1960365364300087724
+let timeframe = 24h;
+let ollama_port = 11434;
+let go_ua_regex = @"^Go-http-client/";
+let common_tools = dynamic(["go.exe", "curl.exe", "wget.exe", "python.exe", "python3.exe", "powershell.exe", "pwsh.exe"]);
+let suspicious_events = union isfuzzy=true
+(DeviceNetworkEvents
+| where Timestamp >= ago(timeframe)
+| where RemotePort == ollama_port and InitiatingProcessFileName in~ (common_tools)
+| extend UserAgent = tostring(parse_json(AdditionalFields).UserAgent)
+| project Timestamp, DeviceId, DeviceName, AccountName = InitiatingProcessAccountName, ProcessName = InitiatingProcessFileName, ProcessCommandLine = InitiatingProcessCommandLine, RemoteIP, RemotePort, RemoteUrl, UserAgent, ActivityType = "NetworkToOllamaPort"
+),
+(DeviceNetworkEvents
+| where Timestamp >= ago(timeframe)
+| where RemoteUrl contains "ollama"
+| extend UserAgent = tostring(parse_json(AdditionalFields).UserAgent)
+| where UserAgent matches regex go_ua_regex
+| project Timestamp, DeviceId, DeviceName, AccountName = InitiatingProcessAccountName, ProcessName = InitiatingProcessFileName, ProcessCommandLine = InitiatingProcessCommandLine, RemoteIP, RemotePort, RemoteUrl, UserAgent, ActivityType = "GoClientToOllamaUrl"
+),
+(DeviceProcessEvents
+| where Timestamp >= ago(timeframe)
+| where ActionType == "ProcessCreated" and (ProcessCommandLine contains "ollama" or InitiatingProcessCommandLine contains "ollama")
+| project Timestamp, DeviceId, DeviceName, AccountName, ProcessName = FileName, ProcessCommandLine, RemoteIP = tostring(null), RemotePort = toint(null), RemoteUrl = tostring(null), UserAgent = tostring(null), ActivityType = "OllamaInCommandLine"
+);
+suspicious_events
+| summarize StartTime = min(Timestamp), EndTime = max(Timestamp), ActivityTypes = make_set(ActivityType), RemoteIPs = make_set(RemoteIP), RemoteUrls = make_set(RemoteUrl), UserAgents = make_set(UserAgent) by DeviceId, DeviceName, AccountName, ProcessName, ProcessCommandLine
+| extend Name = "Suspicious AI activity related to PromptLock Ransomware Activity", Description = strcat("Potential PromptLock activity detected on host ", DeviceName, " by user ", AccountName, ". Observed activities: ", tostring(ActivityTypes), ". Process: ", ProcessName, " with command line: ", ProcessCommandLine)
