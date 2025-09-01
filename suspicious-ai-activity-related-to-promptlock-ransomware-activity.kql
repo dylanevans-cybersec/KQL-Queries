@@ -26,4 +26,7 @@ let suspicious_events = union isfuzzy=true
 );
 suspicious_events
 | summarize StartTime = min(Timestamp), EndTime = max(Timestamp), ActivityTypes = make_set(ActivityType), RemoteIPs = make_set(RemoteIP), RemoteUrls = make_set(RemoteUrl), UserAgents = make_set(UserAgent) by DeviceId, DeviceName, AccountName, ProcessName, ProcessCommandLine
-| extend Name = "Suspicious AI activity related to PromptLock Ransomware Activity", Description = strcat("Potential PromptLock activity detected on host ", DeviceName, " by user ", AccountName, ". Observed activities: ", tostring(ActivityTypes), ". Process: ", ProcessName, " with command line: ", ProcessCommandLine)
+| extend ReportId = strcat(DeviceId, "-", tostring(hash_sha256(strcat(DeviceName, ProcessName, ProcessCommandLine))))
+| extend AlertTitle = "Suspicious AI activity related to PromptLock Ransomware Activity"
+| extend AlertDescription = strcat("Potential PromptLock activity detected on host ", DeviceName, " by user ", AccountName, ". Observed activities: ", tostring(ActivityTypes), ". Process: ", ProcessName, " with command line: ", ProcessCommandLine)
+| project DeviceId, Timestamp = StartTime, ReportId, AccountName, ProcessName, ProcessCommandLine, EndTime, ActivityTypes, RemoteIPs, RemoteUrls, UserAgents
