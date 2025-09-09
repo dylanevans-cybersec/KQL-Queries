@@ -1,0 +1,26 @@
+// Title: Network Connection to Dynamic DNS Subdomain
+// Description: This rule detects network connections to known dynamic DNS (DDNS) subdomains.
+// Author: Dylan Evans (detections.ai/user/Decksy), https://github.com/dylanevans-cybersec/KQL-Queries
+DeviceNetworkEvents
+// | where ActionType in ("ConnectionSuccess", "ConnectionRequest", "ConnectionAttempt") //uncomment to see ONLY successful or partial connections
+| where RemoteUrl matches regex @".*\.(duckdns\.org|publicvm\.com|ddns\.net|hopto\.org|zapto\.org|serveftp\.com|servegame\.com|myftp\.org|myvnc\.com|gotdns\.ch|3utilities\.com|bounceme\.net|freedynamicdns\.org|freedynamicdns\.net|freeddns\.org)$" //hard coded, can come from external source as well provided its in the same format.
+| extend DynamicDNSProvider = case(
+    RemoteUrl contains "duckdns.org", "DuckDNS",
+    RemoteUrl contains "publicvm.com", "PublicVM", 
+    RemoteUrl contains "ddns.net", "DDNS.net",
+    RemoteUrl contains "hopto.org", "No-IP",
+    RemoteUrl contains "zapto.org", "No-IP",
+    RemoteUrl contains "serveftp.com", "No-IP",
+    RemoteUrl contains "servegame.com", "No-IP",
+    RemoteUrl contains "myftp.org", "No-IP",
+    RemoteUrl contains "myvnc.com", "No-IP",
+    RemoteUrl contains "gotdns.ch", "GotDNS",
+    RemoteUrl contains "3utilities.com", "3utilities",
+    RemoteUrl contains "bounceme.net", "BounceMe",
+    RemoteUrl contains "freedynamicdns.org", "FreeDynamicDNS",
+    RemoteUrl contains "freedynamicdns.net", "FreeDynamicDNS",
+    RemoteUrl contains "freeddns.org", "FreeDDNS",
+    "Other"
+)
+| project Timestamp, DeviceName, DeviceId, InitiatingProcessFileName, InitiatingProcessCommandLine, InitiatingProcessAccountName, RemoteUrl, RemoteIP, RemotePort, LocalIP, LocalPort, Protocol, DynamicDNSProvider, ActionType
+| sort by Timestamp desc
