@@ -14,7 +14,7 @@ let RecentUserLocations = BehaviorAnalytics
 | summarize RecentCountries = make_set(Country) by UserPrincipalName;
 let LegitimateSignIns = SigninLogs // identify legitimate IPs based on user sign in activity
 | where TimeGenerated >= lookbackTime
-| where (isnotempty(DeviceDetail.deviceId) or isnotempty(MfaDetail.authMethod) or DeviceDetail.trustType has_any ("Azure AD Joined", "Azure AD Registered")) // Trusted devices and IPs
+| where (isnotempty(DeviceDetail.deviceId) or isnotempty(MfaDetail.authMethod) or DeviceDetail.trustType has_any ("Azure AD Joined"))) // Trusted devices and IPs, you can add "Azure AD Registered" here as well if required
 | where ResultType == 0
 | summarize by UserPrincipalName, IPAddress;
 BehaviorAnalytics
