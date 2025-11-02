@@ -1,0 +1,28 @@
+// Author: Dylan Evans (detections.ai/user/decksy), (github.com/dylanevans-cybersec/KQL-Queries)
+// Date: 2025-11-02
+// Description: Detects connections to blockchain APIs that are indicators of new EtherHiding techniques used by UNC5342 to retrieve malicious payloads.
+// TTPs: T1102.002, T1566.002
+// Observed Threat Actors: UNC5342
+
+// Define known blockchain explorer domains used for EtherHiding
+let blockchainExplorerPatterns = dynamic([
+    "explorer", "block", "cypher", "eth", "bit", "coin", "crypto"
+]);
+// Define suspicious URL patterns associated with UNC5342's JADESNOW malware
+let suspiciousPatterns = dynamic([
+    "eth_call", // Read-only function call used to retrieve data from smart contracts
+    "apiKey=freekey" // Free API key provided by ethplorer service, used commonly by threat actors
+]);
+// Currently commented out to increase scope of detection
+// Define processes that might initiate these requests (browsers, script hosts)
+// let initiatingProcesses = dynamic([
+//     "chrome.exe", "msedge.exe", "firefox.exe", "iexplore.exe", "wscript.exe", "cscript.exe", "node.exe"
+// ]);
+DeviceNetworkEvents
+// Filter for network connections from relevant processes
+//| where InitiatingProcessFileName in~ (initiatingProcesses)
+// Filter for connections to the specified blockchain explorer domains
+| where RemoteUrl has_any (blockchainExplorerPatterns)
+// Filter for URLs containing suspicious patterns
+| where RemoteUrl has_any (suspiciousPatterns)
+| project ReportId, DeviceId, Timestamp, DeviceName, InitiatingProcessFileName, InitiatingProcessCommandLine, RemoteUrl, RemoteIP, RemotePort
