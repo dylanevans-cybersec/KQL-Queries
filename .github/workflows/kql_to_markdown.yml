@@ -27,34 +27,17 @@ jobs:
           token: ${{ secrets.DEST_REPO_TOKEN }}
           path: dest-repo
 
-      - name: Verify Python
-        run: python --version
-
       - name: Install dependencies
-        run: pip install openai gitpython
+        run: C:\Users\dylan\AppData\Local\Programs\Python\Python313\python.exe -m pip install openai gitpython
+        shell: cmd
 
       - name: Check LM Studio is running
-        run: |
-          echo "Checking LM Studio API at http://127.0.0.1:1234/v1/models ..."
-          curl --fail --silent http://127.0.0.1:1234/v1/models | python3 -c "
-          import sys, json
-          data = json.load(sys.stdin)
-          models = [m['id'] for m in data.get('data', [])]
-          print('Available models:', models)
-          if not models:
-              print('ERROR: No models loaded in LM Studio!')
-              sys.exit(1)
-          "
+        run: C:\Users\dylan\AppData\Local\Programs\Python\Python313\python.exe -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:1234/v1/models')"
+        shell: cmd
 
       - name: Run KQL to Markdown converter
-        env:
-          LM_STUDIO_URL:   "http://127.0.0.1:1234"
-          LM_STUDIO_MODEL: "qwen3.5-9b"               # ← must match model name in LM Studio
-          SOURCE_DIR:      "source-repo"   # Folder in source repo with .kql files
-          DEST_DIR:        "dest-repo/content/detections"     # Folder in dest repo for .md output
-          GIT_AUTHOR_NAME:  "KQL Bot"
-          GIT_AUTHOR_EMAIL: "kql-bot@noreply.github.com"
-        run: python source-repo/scripts/convert_kql.py
+        run: C:\Users\dylan\AppData\Local\Programs\Python\Python313\python.exe source-repo/scripts/convert_kql.py
+        shell: cmd
 
       - name: Summary
         run: echo "KQL to Markdown conversion complete."
