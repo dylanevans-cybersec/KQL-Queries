@@ -38,7 +38,7 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 # ── Config ────────────────────────────────────────────────────────────────────
-LM_STUDIO_URL   = os.environ.get("LM_STUDIO_URL",   "http://localhost:1234/v1")
+LM_STUDIO_URL   = os.environ.get("LM_STUDIO_URL",   "http://127.0.0.1:1234/v1")
 LM_STUDIO_MODEL = os.environ.get("LM_STUDIO_MODEL", "qwen3.5-9b")
 SOURCE_DIR      = Path(os.environ.get("SOURCE_DIR", "source-repo/detections"))
 DEST_DIR        = Path(os.environ.get("DEST_DIR",   "dest-repo/detections"))
@@ -56,13 +56,13 @@ client = OpenAI(
 
 # ── Markdown template description given to the LLM ───────────────────────────
 SYSTEM_PROMPT = """
-You are a security documentation expert. Your job is to convert raw KQL (Kusto Query Language)
+You are a cybersecurity detection engineering documentation expert. Your job is to convert raw KQL (Kusto Query Language)
 detection files into polished, structured Markdown documentation.
 
-You must ALWAYS output ONLY valid Markdown — no explanation, no preamble, no code fences
+You must ALWAYS output in the specified markdown format — no explanation, no preamble, no code fences
 around the entire response. Start your response directly with the YAML front matter block.
 
-Use exactly this structure:
+Use EXACTLY this structure:
 
 ---
 title: "<Descriptive title derived from the detection logic>"
@@ -70,25 +70,25 @@ date: "<today's date in YYYY-MM-DD format>"
 summary: "<1–2 sentence plain-English summary of what the detection catches>"
 platform: "<infer the SIEM platform from the query syntax, e.g. Microsoft Sentinel, Splunk, Elastic>"
 tags: ["<tag1>", "<tag2>", "<tag3>"]
-author: "Security Team"
+author: <infer from comments in the query, default = "Dylan Evans">
 ---
 
 ## Overview
 
-<2–3 sentence explanation of the threat this detection addresses and why it matters.>
+<Short, straight-to-the-point 2–3 sentence explanation of the threat this detection addresses and why it matters.>
 
 ## Query
 
 ```kql
-<the original KQL query, unchanged>
+<the ORIGINAL KQL query, DO NOT CHANGE IT>
 ```
 
 ## Logic Explanation
 
-<Explain what the query does step by step — what it filters, aggregates, thresholds, and surfaces.>
+<In short, simple terms, explain what the query does — what, why and how it filters, aggregates, thresholds, and surfaces.>
 
 ## Tuning Notes
-
+<these are the potential false positives that might arise. Give a 1-2 sentence explanation of a potential false positive before suggesting the tune>
 - <Tuning suggestion 1>
 - <Tuning suggestion 2>
 - <Tuning suggestion 3>
@@ -103,6 +103,7 @@ Rules:
 - Tags should be lowercase, hyphenated, and relevant to the detection (e.g. "lateral-movement", "authentication", "kerberos").
 - Do NOT invent details that cannot be inferred from the query.
 - Output ONLY the Markdown. No surrounding prose.
+- DO NOT SEPERATE KQL BLOCKS - this does not work when implemented. Blank lines constitute an absolute failure
 """.strip()
 
 
@@ -146,7 +147,7 @@ def convert_with_lm_studio(kql_content: str, filename: str) -> str:
             {"role": "user",   "content": user_message},
         ],
         temperature=0.2,   # Low temperature for consistent, structured output
-        max_tokens=2048,
+        max_tokens=8192,
     )
 
     return response.choices[0].message.content.strip()
