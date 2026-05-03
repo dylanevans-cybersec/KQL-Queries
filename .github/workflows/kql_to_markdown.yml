@@ -1,0 +1,58 @@
+name: Nightly KQL to Markdown Conversion (LM Studio)
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # Runs nightly at 2:00 AM (local time on your machine)
+  workflow_dispatch:      # Allows manual trigger from GitHub UI
+
+jobs:
+  convert-kql:
+    # ⚠️ IMPORTANT: must be self-hosted so the runner can reach localhost:1234
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout source repo (KQL detections)
+        uses: actions/checkout@v4
+        with:
+          path: source-repo
+
+      - name: Checkout destination repo (Markdown output)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.DEST_REPO }}       # e.g. "your-org/detection-docs"
+          token: ${{ secrets.DEST_REPO_TOKEN }}
+          path: dest-repo
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install openai gitpython
+
+      - name: Check LM Studio is running
+        run: |
+          echo "Checking LM Studio API at http://localhost:1234/v1/models ..."
+          curl --fail --silent http://localhost:1234/v1/models | python3 -c "
+          import sys, json
+          data = json.load(sys.stdin)
+          models = [m['id'] for m in data.get('data', [])]
+          print('Available models:', models)
+          if not models:
+              print('ERROR: No models loaded in LM Studio!')
+              sys.exit(1)
+          "
+
+      - name: Run KQL to Markdown converter
+        env:
+          LM_STUDIO_URL:   "http://localhost:1234/v1"
+          LM_STUDIO_MODEL: "qwen3.5-9b"               # ← must match model name in LM Studio
+          SOURCE_DIR:      "source-repo"   # Folder in source repo with .kql files
+          DEST_DIR:        "dest-repo"     # Folder in dest repo for .md output
+          GIT_AUTHOR_NAME:  "KQL Bot"
+          GIT_AUTHOR_EMAIL: "kql-bot@noreply.github.com"
+        run: python source-repo/scripts/convert_kql.py
+
+      - name: Summary
+        run: echo "KQL to Markdown conversion complete."
