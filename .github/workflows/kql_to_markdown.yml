@@ -13,20 +13,22 @@ jobs:
     steps:
       - name: Checkout source repo (KQL detections)
         uses: actions/checkout@v4
+        env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
         with:
           path: source-repo
 
       - name: Checkout destination repo (Markdown output)
         uses: actions/checkout@v4
+        env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
         with:
           repository: ${{ secrets.DEST_REPO }}       # e.g. "your-org/detection-docs"
           token: ${{ secrets.DEST_REPO_TOKEN }}
           path: dest-repo
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+      - name: Verify Python
+        run: python --version
 
       - name: Install dependencies
         run: pip install openai gitpython
