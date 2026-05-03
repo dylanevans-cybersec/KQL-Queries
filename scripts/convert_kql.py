@@ -147,7 +147,7 @@ def convert_with_lm_studio(kql_content: str, filename: str) -> str:
             {"role": "user",   "content": user_message},
         ],
         temperature=0.2,   # Low temperature for consistent, structured output
-        max_tokens=8192,
+        max_tokens=4096,
     )
 
     return response.choices[0].message.content.strip()
