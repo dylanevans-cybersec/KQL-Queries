@@ -2,7 +2,7 @@ name: Nightly KQL to Markdown Conversion (LM Studio)
 
 on:
   schedule:
-    - cron: '0 2 * * *'
+    - cron: '30 6 * * *'
   workflow_dispatch:
 
 jobs:
