@@ -33,7 +33,7 @@ jobs:
       - name: Run KQL to Markdown converter
         env:
           LM_STUDIO_URL:    "http://127.0.0.1:1234/v1"
-          LM_STUDIO_MODEL:  "qwen3.5-9b"
+          LM_STUDIO_MODEL:  "ministral-3-3b"
           SOURCE_DIR:       "source-repo"
           DEST_DIR:         "dest-repo/content/detections"
           GIT_AUTHOR_NAME:  "KQL Bot"
