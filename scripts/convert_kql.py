@@ -7,8 +7,8 @@ structured Markdown format, then commits and pushes the resulting
 .md files to a destination repo.
 
 Required environment variables:
-  LM_STUDIO_URL       - Base URL of LM Studio API (default: http://localhost:1234/v1)
-  LM_STUDIO_MODEL     - Model name as shown in LM Studio (default: qwen3.5-9b)
+  LM_STUDIO_URL       - Base URL of LM Studio API (default: http://127.0.0.1:1234/v1)
+  LM_STUDIO_MODEL     - Model name as shown in LM Studio (default: mistral-3-3b)
   SOURCE_DIR          - Path to the folder containing .kql files
   DEST_DIR            - Path to the destination folder for .md files
   GIT_AUTHOR_NAME     - Git commit author name
@@ -29,37 +29,34 @@ from pathlib import Path
 from openai import OpenAI
 import git
 
-# ── Logging ──────────────────────────────────────────────────────────────────
+# UTF-8 safe logging for Windows
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
+    handlers=[logging.StreamHandler(open(sys.stdout.fileno(), mode='w', encoding='utf-8', closefd=False))],
 )
 log = logging.getLogger(__name__)
 
-# ── Config ────────────────────────────────────────────────────────────────────
+# Config
 LM_STUDIO_URL   = os.environ.get("LM_STUDIO_URL",   "http://127.0.0.1:1234/v1")
-LM_STUDIO_MODEL = os.environ.get("LM_STUDIO_MODEL", "qwen3.5-9b")
-SOURCE_DIR      = Path(os.environ.get("SOURCE_DIR", "source-repo/detections"))
-DEST_DIR        = Path(os.environ.get("DEST_DIR",   "dest-repo/detections"))
+LM_STUDIO_MODEL = os.environ.get("LM_STUDIO_MODEL", "mistral-3-3b")
+SOURCE_DIR      = Path(os.environ.get("SOURCE_DIR", "source-repo"))
+DEST_DIR        = Path(os.environ.get("DEST_DIR",   "dest-repo/content/detections"))
 GIT_AUTHOR_NAME = os.environ.get("GIT_AUTHOR_NAME",  "KQL Bot")
 GIT_AUTHOR_EMAIL= os.environ.get("GIT_AUTHOR_EMAIL", "kql-bot@noreply.github.com")
 
-# Tracks which files have already been converted (stored as a JSON hash map in dest repo)
 STATE_FILE = Path("dest-repo/.kql_conversion_state.json")
 
-# ── LM Studio client (OpenAI-compatible) ──────────────────────────────────────
 client = OpenAI(
     base_url=LM_STUDIO_URL,
-    api_key="lm-studio",   # LM Studio doesn't need a real key — any string works
+    api_key="lm-studio",
 )
 
-# ── Markdown template description given to the LLM ───────────────────────────
 SYSTEM_PROMPT = """
 You are a cybersecurity detection engineering documentation expert. Your job is to convert raw KQL (Kusto Query Language)
-detection files into polished, structured Markdown documentation.
+detection files into polished, structured Markdown documentation using the given schema.
 
-You must ALWAYS output in the specified markdown format — no explanation, no preamble, no code fences
+You must ALWAYS output ONLY valid Markdown - no explanation, no preamble, no code fences
 around the entire response. Start your response directly with the YAML front matter block.
 
 Use EXACTLY this structure:
@@ -67,15 +64,18 @@ Use EXACTLY this structure:
 ---
 title: "<Descriptive title derived from the detection logic>"
 date: "<today's date in YYYY-MM-DD format>"
-summary: "<1–2 sentence plain-English summary of what the detection catches>"
-platform: "<infer the SIEM platform from the query syntax, e.g. Microsoft Sentinel, Splunk, Elastic>"
+summary: "<1-2 sentence plain-English summary of what the detection catches>"
+platform: "<infer the SIEM platform from the query syntax, e.g. Microsoft, Splunk, Elastic>"
 tags: ["<tag1>", "<tag2>", "<tag3>"]
-author: <infer from comments in the query, default = "Dylan Evans">
+author: "<infer from comments in the query, default = Dylan Evans>"
+mitre: "<relevant technique ID and name if detectable, otherwise omit this field>"
 ---
+
+# <Same descriptive title as above>
 
 ## Overview
 
-<Short, straight-to-the-point 2–3 sentence explanation of the threat this detection addresses and why it matters.>
+<Short, straight-to-the-point 2-3 sentence explanation of the threat this detection addresses and why it matters.>
 
 ## Query
 
@@ -85,55 +85,49 @@ author: <infer from comments in the query, default = "Dylan Evans">
 
 ## Logic Explanation
 
-<In short, simple terms, explain what the query does — what, why and how it filters, aggregates, thresholds, and surfaces.>
+<In short, simple terms, explain what the query does - what, why and how it filters, aggregates, thresholds, and surfaces.>
 
 ## Tuning Notes
-<these are the potential false positives that might arise. Give a 1-2 sentence explanation of a potential false positive before suggesting the tune>
+
+<1-2 sentence explanation of potential false positives before each tuning suggestion.>
+
 - <Tuning suggestion 1>
 - <Tuning suggestion 2>
 - <Tuning suggestion 3>
 
 ## References
 
-- MITRE ATT&CK: <relevant technique ID and name if detectable, otherwise omit>
-- <Any other relevant references>
+- <Any relevant references>
 
 Rules:
 - Infer as much as possible from the query itself (table names, operators, thresholds).
 - Tags should be lowercase, hyphenated, and relevant to the detection (e.g. "lateral-movement", "authentication", "kerberos").
 - Do NOT invent details that cannot be inferred from the query.
 - Output ONLY the Markdown. No surrounding prose.
-- DO NOT SEPERATE KQL BLOCKS - this does not work when implemented. Blank lines constitute an absolute failure
+- DO NOT SEPARATE KQL BLOCKS - blank lines inside a KQL code block will break rendering.
 """.strip()
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
 def file_hash(path: Path) -> str:
-    """SHA-256 hash of a file's contents."""
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def load_state() -> dict:
-    """Load the hash-state map from the destination repo."""
     if STATE_FILE.exists():
         return json.loads(STATE_FILE.read_text())
     return {}
 
 
 def save_state(state: dict) -> None:
-    """Persist the hash-state map."""
     STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
     STATE_FILE.write_text(json.dumps(state, indent=2))
 
 
 def find_kql_files(source_dir: Path) -> list[Path]:
-    """Recursively find all .kql files in source_dir."""
     return sorted(source_dir.rglob("*.kql"))
 
 
 def convert_with_lm_studio(kql_content: str, filename: str) -> str:
-    """Send a KQL file to the local LM Studio model and return Markdown output."""
     user_message = (
         f"Convert the following KQL detection file to Markdown.\n"
         f"Filename hint: {filename}\n\n"
@@ -146,7 +140,7 @@ def convert_with_lm_studio(kql_content: str, filename: str) -> str:
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user",   "content": user_message},
         ],
-        temperature=0.2,   # Low temperature for consistent, structured output
+        temperature=0.2,
         max_tokens=4096,
     )
 
@@ -154,17 +148,15 @@ def convert_with_lm_studio(kql_content: str, filename: str) -> str:
 
 
 def write_markdown(dest_dir: Path, kql_path: Path, markdown: str) -> Path:
-    """Write Markdown output to the destination directory, mirroring source structure."""
     relative = kql_path.relative_to(SOURCE_DIR)
     md_path  = dest_dir / relative.with_suffix(".md")
     md_path.parent.mkdir(parents=True, exist_ok=True)
     md_path.write_text(markdown, encoding="utf-8")
-    log.info(f"  Written → {md_path}")
+    log.info(f"  Written to: {md_path}")
     return md_path
 
 
 def commit_and_push(dest_repo_path: Path, changed_files: list[Path]) -> None:
-    """Stage, commit, and push changed Markdown files to the destination repo."""
     repo = git.Repo(dest_repo_path)
 
     with repo.config_writer() as cfg:
@@ -177,7 +169,7 @@ def commit_and_push(dest_repo_path: Path, changed_files: list[Path]) -> None:
     repo.index.add(all_files)
 
     if not repo.index.diff("HEAD"):
-        log.info("Nothing to commit — all files already up to date.")
+        log.info("Nothing to commit - all files already up to date.")
         return
 
     today   = datetime.utcnow().strftime("%Y-%m-%d")
@@ -190,18 +182,15 @@ def commit_and_push(dest_repo_path: Path, changed_files: list[Path]) -> None:
     log.info(f"Pushed {count} file(s) with message: '{message}'")
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
-
 def main() -> None:
     log.info("=" * 60)
-    log.info("KQL → Markdown Conversion Pipeline (LM Studio)")
+    log.info("KQL -> Markdown Conversion Pipeline (LM Studio)")
     log.info(f"  Model  : {LM_STUDIO_MODEL}")
     log.info(f"  API    : {LM_STUDIO_URL}")
     log.info(f"  Source : {SOURCE_DIR}")
     log.info(f"  Dest   : {DEST_DIR}")
     log.info("=" * 60)
 
-    # Verify LM Studio is reachable before doing any work
     try:
         models = client.models.list()
         available = [m.id for m in models.data]
@@ -263,7 +252,7 @@ def main() -> None:
         dest_repo_root = Path("dest-repo")
         commit_and_push(dest_repo_root, converted)
     else:
-        log.info("No new conversions — skipping git push.")
+        log.info("No new conversions - skipping git push.")
 
     if errors:
         sys.exit(1)
