@@ -11,7 +11,8 @@ let knownIds = DeviceFileEvents
 | extend ClientId = extraction(FolderPath)
 | where isnotempty(ClientId)
 | distinct ClientId;
-DeviceEvents
+DeviceFileEvents
 | where ActionType == "FileCreated"
 | extend ClientId = extraction(FolderPath)
 | where isnotempty(ClientId)
+| where not(ClientId has_any (knownIds))
