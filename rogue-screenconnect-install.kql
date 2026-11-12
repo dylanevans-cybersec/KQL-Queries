@@ -1,4 +1,4 @@
-et baselineWindow = 30d;
+let baselineWindow = 30d;
 let detectionWindow = 1h;
 let extraction = (p:string) {
     tolower(coalesce(
