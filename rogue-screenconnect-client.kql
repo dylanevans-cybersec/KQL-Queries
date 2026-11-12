@@ -1,0 +1,17 @@
+et baselineWindow = 30d;
+let detectionWindow = 1h;
+let extraction = (p:string) {
+    tolower(coalesce(
+        extract(@"(?i)\\ScreenConnect\\[\d\.]+\\([0-9a-f]{16})(\\|$)", 1, p),
+        extract(@"(?i)ScreenConnect Client \(([0-9a-f]{16})\)", 1, p)))
+};
+let knownIds = DeviceFileEvents
+| where Timestamp between (ago(baselineWindow) .. ago(detectionWindow))
+| where FolderPath has "ScreenConnect"
+| extend ClientId = extraction(FolderPath)
+| where isnotempty(ClientId)
+| distinct ClientId;
+DeviceEvents
+| where ActionType == "FileCreated"
+| extend ClientId = extraction(FolderPath)
+| where isnotempty(ClientId)
